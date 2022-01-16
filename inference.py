@@ -41,45 +41,51 @@ def load_model(model_path):
     ''' Loads a model and its state dict. Accepts path to the model, returns the model. Default cnn type is resnet18 '''
     saved_model = torch.load(f'{model_path}')
     model_name  = saved_model['model_name']
-    categories = saved_model['сategories']
+    categories = saved_model['сategories_data'][0]
+    img_channels = saved_model['metadata']
     mylogs.info("Model: " + model_name)
-
+    ###### fix it
+    num_classes = len(categories)
+    #########
     import resnet
     if model_name == 'ResNet18':
-            model = resnet.ResNet18()
+            model = resnet.ResNet18(img_channels, num_classes)
     elif model_name == 'ResNet34':
-            model = resnet.ResNet34()
+            model = resnet.ResNet34(img_channels, num_classes)
     elif model_name == 'ResNet50':
-            model = resnet.ResNet50()
+            model = resnet.ResNet50(img_channels, num_classes)
     elif model_name == 'ResNet101':
-            model = resnet.ResNet101()
+            model = resnet.ResNet101(img_channels, num_classes)
     elif model_name == 'ResNet152':
-            model = resnet.ResNet152()
+            model = resnet.ResNet152(img_channels, num_classes)
     else:
             model = resnet.ResNet18()
     model.load_state_dict(torch.load(model_path)['model_state_dict'])
     model.eval()
+    return model, categories, img_channels
 
-    return model, categories
-
-def transform():
+def transform(img_channels):
+    if img_channels == 3:
+        dimensions = ((0,0,0), (1,1,1))
+    elif img_channels == 1:
+        dimensions = ((0), (1))
     return tv.Compose([
         tv.ToTensor(),
-        tv.Normalize((0, 0, 0),(1, 1, 1))
+        tv.Normalize((dimensions[0]),(dimensions[1]))
     ])
 
-def image_loader(image_path):
+def image_loader(image_path, dimensions):
     '''loads image,transforms it and returns tensor'''
     img = Image.open(image_path)
     img = img.resize((224, 224))
-    img = transform()(img)
+    img = transform(img_channels)(img)
     #As torch models expects a batch, this image should be turned into a batch with 1 image
     img  = img.unsqueeze(0)
     return img.cpu()
 
-def show_img_with_pred(image_path, model, show_results=1, n_pred=3):
+def show_img_with_pred(image_path, model, dimensions, show_results=1, n_pred=3):
     ''' Predicts one image, returns prediction '''
-    img = image_loader(image_path)
+    img = image_loader(image_path, dimensions)
     img = img.to(device)
     model.to(device)
     with torch.no_grad():
@@ -103,7 +109,7 @@ def show_img_with_pred(image_path, model, show_results=1, n_pred=3):
     if not show_results:
         return prediction
 
-def batch_prediction(images_folder_path, model, save_path=None,n_pred = 3):
+def batch_prediction(images_folder_path, model,dimensions, save_path=None,n_pred = 3):
     ''' Make an inference on the images in the folder, returns a csv with results'''
     imgs_path_list = glob.glob(f'{images_folder_path}\*')
     mylogs.info(f"Inference started. \n {len(imgs_path_list)} images to predict")
@@ -112,7 +118,7 @@ def batch_prediction(images_folder_path, model, save_path=None,n_pred = 3):
     start_time = time.time()
     for image_path in imgs_path_list:
         names.append(os.path.split(image_path)[1])
-        prediction = show_img_with_pred(image_path, model,show_results=0)
+        prediction = show_img_with_pred(image_path, model, dimensions, show_results=0)
         top_n_probs, top_n_labels = torch.topk(prediction, n_pred)
         softmax = torch.nn.Softmax(dim=1)
 
